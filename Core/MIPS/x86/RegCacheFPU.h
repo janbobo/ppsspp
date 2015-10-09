@@ -119,6 +119,9 @@ public:
 
 	void SetEmitter(Gen::XEmitter *emitter) {emit = emitter;}
 
+	// Flushes one register and reuses the register for another one. Dirtyness is implied.
+	void FlushRemap(int oldreg, int newreg);
+
 	void Flush();
 	int SanityCheck() const;
 
@@ -206,7 +209,7 @@ public:
 	void SimpleRegV(const u8 v, int flags);
 
 	void GetState(FPURegCacheState &state) const;
-	void RestoreState(const FPURegCacheState state);
+	void RestoreState(const FPURegCacheState& state);
 
 	MIPSState *mips;
 

@@ -72,6 +72,7 @@ public:
 	void Start(MIPSState *mips, MIPSComp::JitState *js, MIPSComp::JitOptions *jo, MIPSAnalyst::AnalysisResults &stats);
 
 	void DiscardRegContentsIfCached(MIPSGPReg preg);
+	void DiscardR(MIPSGPReg preg);
 	void SetEmitter(Gen::XEmitter *emitter) {emit = emitter;}
 
 	void FlushR(Gen::X64Reg reg); 
@@ -85,6 +86,10 @@ public:
 	}
 	void Flush();
 	void FlushBeforeCall();
+
+	// Flushes one register and reuses the register for another one. Dirtyness is implied.
+	void FlushRemap(MIPSGPReg oldreg, MIPSGPReg newreg);
+
 	int SanityCheck() const;
 	void KillImmediate(MIPSGPReg preg, bool doLoad, bool makeDirty);
 
@@ -112,7 +117,7 @@ public:
 	u32 GetImm(MIPSGPReg preg) const;
 
 	void GetState(GPRRegCacheState &state) const;
-	void RestoreState(const GPRRegCacheState state);
+	void RestoreState(const GPRRegCacheState& state);
 
 	MIPSState *mips;
 

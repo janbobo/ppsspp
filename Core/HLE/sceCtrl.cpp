@@ -21,7 +21,7 @@
 #include "Core/HLE/FunctionWrappers.h"
 #include "Core/MIPS/MIPS.h"
 #include "Core/CoreTiming.h"
-#include "Core/MemMap.h"
+#include "Core/MemMapHelpers.h"
 #include "Common/ChunkFile.h"
 #include "Common/StdMutex.h"
 #include "Core/HLE/sceCtrl.h"
@@ -181,16 +181,16 @@ void __CtrlButtonUp(u32 buttonBit)
 
 void __CtrlSetAnalogX(float x, int stick)
 {
+	u8 scaled = clamp_u8((int)ceilf(x * 127.5f + 127.5f));
 	std::lock_guard<std::recursive_mutex> guard(ctrlMutex);
-	int scaled = (int)ceilf(x * 127.5f + 127.5f);
-	ctrlCurrent.analog[stick][CTRL_ANALOG_X] = clamp_u8(scaled);
+	ctrlCurrent.analog[stick][CTRL_ANALOG_X] = scaled;
 }
 
 void __CtrlSetAnalogY(float y, int stick)
 {
+	u8 scaled = clamp_u8((int)ceilf(-y * 127.5f + 127.5f));
 	std::lock_guard<std::recursive_mutex> guard(ctrlMutex);
-	int scaled = (int)ceilf(-y * 127.5f + 127.5f);
-	ctrlCurrent.analog[stick][CTRL_ANALOG_Y] = clamp_u8(scaled);
+	ctrlCurrent.analog[stick][CTRL_ANALOG_Y] = scaled;
 }
 
 void __CtrlSetRapidFire(bool state)
@@ -520,23 +520,23 @@ static u32 sceCtrlReadLatch(u32 latchDataPtr)
 
 static const HLEFunction sceCtrl[] = 
 {
-	{0x3E65A0EA, 0, "sceCtrlInit"}, //(int unknown), init with 0
-	{0x1f4011e6, WrapU_U<sceCtrlSetSamplingMode>, "sceCtrlSetSamplingMode"}, //(int on);
-	{0x6A2774F3, WrapU_U<sceCtrlSetSamplingCycle>, "sceCtrlSetSamplingCycle"},
-	{0x02BAAD91, WrapI_U<sceCtrlGetSamplingCycle>,"sceCtrlGetSamplingCycle"},
-	{0xDA6B76A1, WrapI_U<sceCtrlGetSamplingMode>, "sceCtrlGetSamplingMode"},
-	{0x1f803938, WrapV_UU<sceCtrlReadBufferPositive>, "sceCtrlReadBufferPositive"}, //(ctrl_data_t* paddata, int unknown) // unknown should be 1
-	{0x3A622550, WrapI_UU<sceCtrlPeekBufferPositive>, "sceCtrlPeekBufferPositive"},
-	{0xC152080A, WrapI_UU<sceCtrlPeekBufferNegative>, "sceCtrlPeekBufferNegative"},
-	{0x60B81F86, WrapV_UU<sceCtrlReadBufferNegative>, "sceCtrlReadBufferNegative"},
-	{0xB1D0E5CD, WrapU_U<sceCtrlPeekLatch>, "sceCtrlPeekLatch"},
-	{0x0B588501, WrapU_U<sceCtrlReadLatch>, "sceCtrlReadLatch"},
-	{0x348D99D4, 0, "sceCtrlSetSuspendingExtraSamples"},
-	{0xAF5960F3, 0, "sceCtrlGetSuspendingExtraSamples"},
-	{0xA68FD260, 0, "sceCtrlClearRapidFire"},
-	{0x6841BE1A, 0, "sceCtrlSetRapidFire"},
-	{0xa7144800, WrapI_II<sceCtrlSetIdleCancelThreshold>, "sceCtrlSetIdleCancelThreshold"},
-	{0x687660fa, WrapI_UU<sceCtrlGetIdleCancelThreshold>, "sceCtrlGetIdleCancelThreshold"},
+	{0X3E65A0EA, nullptr,                                  "sceCtrlInit",                      '?', ""  }, //(int unknown), init with 0
+	{0X1F4011E6, &WrapU_U<sceCtrlSetSamplingMode>,         "sceCtrlSetSamplingMode",           'x', "x" },
+	{0X6A2774F3, &WrapU_U<sceCtrlSetSamplingCycle>,        "sceCtrlSetSamplingCycle",          'x', "x" },
+	{0X02BAAD91, &WrapI_U<sceCtrlGetSamplingCycle>,        "sceCtrlGetSamplingCycle",          'i', "x" },
+	{0XDA6B76A1, &WrapI_U<sceCtrlGetSamplingMode>,         "sceCtrlGetSamplingMode",           'i', "x" },
+	{0X1F803938, &WrapV_UU<sceCtrlReadBufferPositive>,     "sceCtrlReadBufferPositive",        'v', "xx"},
+	{0X3A622550, &WrapI_UU<sceCtrlPeekBufferPositive>,     "sceCtrlPeekBufferPositive",        'i', "xx"},
+	{0XC152080A, &WrapI_UU<sceCtrlPeekBufferNegative>,     "sceCtrlPeekBufferNegative",        'i', "xx"},
+	{0X60B81F86, &WrapV_UU<sceCtrlReadBufferNegative>,     "sceCtrlReadBufferNegative",        'v', "xx"},
+	{0XB1D0E5CD, &WrapU_U<sceCtrlPeekLatch>,               "sceCtrlPeekLatch",                 'x', "x" },
+	{0X0B588501, &WrapU_U<sceCtrlReadLatch>,               "sceCtrlReadLatch",                 'x', "x" },
+	{0X348D99D4, nullptr,                                  "sceCtrlSetSuspendingExtraSamples", '?', ""  },
+	{0XAF5960F3, nullptr,                                  "sceCtrlGetSuspendingExtraSamples", '?', ""  },
+	{0XA68FD260, nullptr,                                  "sceCtrlClearRapidFire",            '?', ""  },
+	{0X6841BE1A, nullptr,                                  "sceCtrlSetRapidFire",              '?', ""  },
+	{0XA7144800, &WrapI_II<sceCtrlSetIdleCancelThreshold>, "sceCtrlSetIdleCancelThreshold",    'i', "ii"},
+	{0X687660FA, &WrapI_UU<sceCtrlGetIdleCancelThreshold>, "sceCtrlGetIdleCancelThreshold",    'i', "xx"},
 };	
 
 void Register_sceCtrl()

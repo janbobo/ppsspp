@@ -96,6 +96,7 @@ static const HardHashTableEntry hardcodedHashes[] = {
 	{ 0x073cf0b61d3b875a, 416, "hexyzforce_monoclome_thread", }, // Hexyz Force (US)
 	{ 0x075fa9b234b41e9b, 32, "fmodf", },
 	{ 0x0a051019bdd786c3, 184, "strcasecmp", },
+	{ 0x0a1bed70958935d2, 644, "youkosohitsujimura_download_frame", }, // Youkoso Hitsuji-Mura Portable
 	{ 0x0a46dc426054bb9d, 24, "vector_add_t", },
 	{ 0x0c0173ed70f84f66, 48, "vnormalize_t", },
 	{ 0x0c65188f5bfb3915, 24, "vsgn_q", },
@@ -347,6 +348,7 @@ static const HardHashTableEntry hardcodedHashes[] = {
 	{ 0xad67add5122b8c64, 52, "matrix_q_translate_t", },
 	{ 0xada952a1adcea4f5, 60, "vmmul_q_transp5", },
 	{ 0xadfbf8fb8c933193, 56, "fabs", },
+	{ 0xae39bac51fd6e76b, 628, "gakuenheaven_download_frame", }, // Gakuen Heaven: Boy's Love Scramble!
 	{ 0xae50226363135bdd, 24, "vector_sub_t", },
 	{ 0xae6cd7dfac82c244, 48, "vpow_s", },
 	{ 0xaf85d47f95ad2921, 1936, "pow", },
@@ -1286,7 +1288,9 @@ skip:
 			mf.hardcoded = false;
 			if (fscanf(file, "%llx:%d = %63s\n", &mf.hash, &mf.size, mf.name) < 3) {
 				char temp[1024];
-				fgets(temp, 1024, file);
+				if (!fgets(temp, 1024, file)) {
+					WARN_LOG(LOADER, "Could not read from hash map: %s", filename.c_str());
+				}
 				continue;
 			}
 

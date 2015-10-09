@@ -23,6 +23,7 @@
 #include "Common/Log.h"
 #include "Core/Config.h"
 #include "Core/Debugger/Breakpoints.h"
+#include "Core/Debugger/SymbolMap.h"
 #include "Core/MemMap.h"
 #include "Core/MIPS/JitCommon/JitCommon.h"
 #include "Core/MIPS/MIPSCodeUtils.h"
@@ -31,7 +32,9 @@
 #include "Core/HLE/FunctionWrappers.h"
 
 #include "GPU/Math3D.h"
+#include "GPU/GPU.h"
 #include "GPU/GPUInterface.h"
+#include "GPU/GPUState.h"
 
 #if defined(_M_IX86) || defined(_M_X64)
 #include <emmintrin.h>
@@ -178,7 +181,10 @@ static int Replace_memcpy_jak() {
 	currentMIPS->r[MIPS_REG_A2] = 0;
 	currentMIPS->r[MIPS_REG_A3] = destPtr + bytes;
 	RETURN(destPtr);
-
+#ifndef MOBILE_DEVICE
+	CBreakPoints::ExecMemCheck(srcPtr, false, bytes, currentMIPS->pc);
+	CBreakPoints::ExecMemCheck(destPtr, true, bytes, currentMIPS->pc);
+#endif
 	return 5 + bytes * 8 + 2;  // approximation. This is a slow memcpy - a byte copy loop..
 }
 
@@ -682,14 +688,14 @@ static int Hook_brandish_download_frame() {
 }
 
 static int Hook_growlanser_create_saveicon() {
-    const u32 fb_address = Memory::Read_U32(currentMIPS->r[MIPS_REG_SP] + 4);
-    const u32 fmt = Memory::Read_U32(currentMIPS->r[MIPS_REG_SP]);
-    const u32 sz = fmt == GE_FORMAT_8888 ? 0x00088000 : 0x00044000;
-    if (Memory::IsVRAMAddress(fb_address) && fmt <= 3) {
-        gpu->PerformMemoryDownload(fb_address, sz);
-        CBreakPoints::ExecMemCheck(fb_address, true, sz, currentMIPS->pc);
-    }
-    return 0;
+	const u32 fb_address = Memory::Read_U32(currentMIPS->r[MIPS_REG_SP] + 4);
+	const u32 fmt = Memory::Read_U32(currentMIPS->r[MIPS_REG_SP]);
+	const u32 sz = fmt == GE_FORMAT_8888 ? 0x00088000 : 0x00044000;
+	if (Memory::IsVRAMAddress(fb_address) && fmt <= 3) {
+		gpu->PerformMemoryDownload(fb_address, sz);
+		CBreakPoints::ExecMemCheck(fb_address, true, sz, currentMIPS->pc);
+	}
+	return 0;
 }
 
 static int Hook_sd_gundam_g_generation_download_frame() {
@@ -979,7 +985,7 @@ static int Hook_utawarerumono_download_frame() {
 	if (Memory::IsVRAMAddress(fb_address)) {
 		gpu->PerformMemoryDownload(fb_address, 0x00088000);
 		CBreakPoints::ExecMemCheck(fb_address, true, 0x00088000, currentMIPS->pc);
-}
+	}
 	return 0;
 }
 
@@ -1001,12 +1007,34 @@ static int Hook_photokano_download_frame_2() {
 	return 0;
 }
 
+static int Hook_gakuenheaven_download_frame() {
+	const u32 fb_address = currentMIPS->r[MIPS_REG_A0];
+	if (Memory::IsVRAMAddress(fb_address)) {
+		gpu->PerformMemoryDownload(fb_address, 0x00088000);
+		CBreakPoints::ExecMemCheck(fb_address, true, 0x00088000, currentMIPS->pc);
+	}
+	return 0;
+}
+
+static int Hook_youkosohitsujimura_download_frame() {
+	const u32 fb_address = currentMIPS->r[MIPS_REG_V0];
+	if (Memory::IsVRAMAddress(fb_address)) {
+		gpu->PerformMemoryDownload(fb_address, 0x00088000);
+		CBreakPoints::ExecMemCheck(fb_address, true, 0x00088000, currentMIPS->pc);
+	}
+	return 0;
+}
+
 #ifdef ARM
 #define JITFUNC(f) (&MIPSComp::ArmJit::f)
+#elif defined(ARM64)
+#define JITFUNC(f) (&MIPSComp::Arm64Jit::f)
 #elif defined(_M_X64) || defined(_M_IX86)
 #define JITFUNC(f) (&MIPSComp::Jit::f)
 #elif defined(MIPS)
 #define JITFUNC(f) (&MIPSComp::Jit::f)
+#else
+#define JITFUNC(f) (&MIPSComp::FakeJit::f)
 #endif
 
 // Can either replace with C functions or functions emitted in Asm/ArmAsm.
@@ -1090,6 +1118,8 @@ static const ReplacementTableEntry entries[] = {
 	{ "utawarerumono_download_frame", &Hook_utawarerumono_download_frame, 0, REPFLAG_HOOKENTER, },
 	{ "photokano_download_frame", &Hook_photokano_download_frame, 0, REPFLAG_HOOKENTER, 0x2C },
 	{ "photokano_download_frame_2", &Hook_photokano_download_frame_2, 0, REPFLAG_HOOKENTER, },
+	{ "gakuenheaven_download_frame", &Hook_gakuenheaven_download_frame, 0, REPFLAG_HOOKENTER, },
+	{ "youkosohitsujimura_download_frame", &Hook_youkosohitsujimura_download_frame, 0, REPFLAG_HOOKENTER, 0x94 },
 	{}
 };
 
@@ -1179,6 +1209,8 @@ void RestoreReplacedInstruction(u32 address) {
 }
 
 void RestoreReplacedInstructions(u32 startAddr, u32 endAddr) {
+	if (endAddr == startAddr)
+		return;
 	// Need to be in order, or we'll hang.
 	if (endAddr < startAddr)
 		std::swap(endAddr, startAddr);
@@ -1230,4 +1262,36 @@ bool GetReplacedOpAt(u32 address, u32 *op) {
 		}
 	}
 	return false;
+}
+
+bool CanReplaceJalTo(u32 dest, const ReplacementTableEntry **entry, u32 *funcSize) {
+	MIPSOpcode op(Memory::Read_Opcode_JIT(dest));
+	if (!MIPS_IS_REPLACEMENT(op.encoding))
+		return false;
+
+	// Make sure we don't replace if there are any breakpoints inside.
+	*funcSize = symbolMap.GetFunctionSize(dest);
+	if (*funcSize == SymbolMap::INVALID_ADDRESS) {
+		if (CBreakPoints::IsAddressBreakPoint(dest)) {
+			return false;
+		}
+		*funcSize = (u32)sizeof(u32);
+	} else {
+		if (CBreakPoints::RangeContainsBreakPoint(dest, *funcSize)) {
+			return false;
+		}
+	}
+
+	int index = op.encoding & MIPS_EMUHACK_VALUE_MASK;
+	*entry = GetReplacementFunc(index);
+	if (!*entry) {
+		ERROR_LOG(HLE, "ReplaceJalTo: Invalid replacement op %08x at %08x", op.encoding, dest);
+		return false;
+	}
+
+	if ((*entry)->flags & (REPFLAG_HOOKENTER | REPFLAG_HOOKEXIT | REPFLAG_DISABLED)) {
+		// If it's a hook, we can't replace the jal, we have to go inside the func.
+		return false;
+	}
+	return true;
 }

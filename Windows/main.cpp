@@ -24,6 +24,7 @@
 #include "file/vfs.h"
 #include "file/zip_read.h"
 #include "base/NativeApp.h"
+#include "profiler/profiler.h"
 #include "thread/threadutil.h"
 #include "util/text/utf8.h"
 
@@ -38,9 +39,10 @@
 
 #include "Commctrl.h"
 
+#include "UI/GameInfoCache.h"
 #include "Windows/resource.h"
 
-#include "Windows/WndMainWindow.h"
+#include "Windows/MainWindow.h"
 #include "Windows/Debugger/Debugger_Disasm.h"
 #include "Windows/Debugger/Debugger_MemoryDlg.h"
 #include "Windows/Debugger/Debugger_VFPUDlg.h"
@@ -70,9 +72,6 @@ CMemoryDlg *memoryWindow[MAX_CPUCOUNT] = {0};
 static std::string langRegion;
 static std::string osName;
 static std::string gpuDriverVersion;
-
-typedef BOOL(WINAPI *isProcessDPIAwareProc)();
-typedef BOOL(WINAPI *setProcessDPIAwareProc)();
 
 void LaunchBrowser(const char *url) {
 	ShellExecute(NULL, L"open", ConvertUTF8ToWString(url).c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -114,6 +113,7 @@ std::string GetWindowsVersion() {
 	const bool IsWindows7SP1 = DoesVersionMatchWindows(6, 1, 1, 0);
 	const bool IsWindows8 = DoesVersionMatchWindows(6, 2);
 	const bool IsWindows8_1 = DoesVersionMatchWindows(6, 3);
+	const bool IsWindows10 = DoesVersionMatchWindows(10, 0);
 
 	if (IsWindowsXPSP2)
 		return "Microsoft Windows XP, Service Pack 2";
@@ -141,6 +141,9 @@ std::string GetWindowsVersion() {
 
 	if (IsWindows8_1)
 		return "Microsoft Windows 8.1";
+
+	if (IsWindows10)
+		return "Microsoft Windows 10";
 
 	return "Unsupported version of Microsoft Windows.";
 }
@@ -205,7 +208,7 @@ std::string GetVideoCardDriverVersion() {
 		hr = pEnum->Next(WBEM_INFINITE, 1, &pObj, &uReturned);
 	}
 
-	if (uReturned && !FAILED(hr)) {
+	if (!FAILED(hr) && uReturned) {
 		hr = pObj->Get(L"DriverVersion", 0, &var, NULL, NULL);
 		if (SUCCEEDED(hr)) {
 			char str[MAX_PATH];
@@ -266,6 +269,8 @@ int System_GetPropertyInt(SystemProperty prop) {
 		return winAudioBackend ? winAudioBackend->GetSampleRate() : -1;
 	case SYSPROP_DISPLAY_REFRESH_RATE:
 		return 60000;
+	case SYSPROP_DEVICE_TYPE:
+		return DEVICE_TYPE_DESKTOP;
 	default:
 		return -1;
 	}
@@ -328,22 +333,6 @@ bool System_InputBoxGetWString(const wchar_t *title, const std::wstring &default
 	}
 }
 
-void MakePPSSPPDPIAware()
-{
-	isProcessDPIAwareProc isDPIAwareProc = (isProcessDPIAwareProc) 
-		GetProcAddress(GetModuleHandle(TEXT("User32.dll")), "IsProcessDPIAware");
-
-	setProcessDPIAwareProc setDPIAwareProc = (setProcessDPIAwareProc)
-		GetProcAddress(GetModuleHandle(TEXT("User32.dll")), "SetProcessDPIAware");
-
-	// If we're not DPI aware, make it so, but do it safely.
-	if (isDPIAwareProc != nullptr) {
-		if (!isDPIAwareProc()) {
-			if (setDPIAwareProc != nullptr)
-				setDPIAwareProc();
-		}
-	}
-}
 
 std::vector<std::wstring> GetWideCmdLine() {
 	wchar_t **wargv;
@@ -361,9 +350,11 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLin
 
 	CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
-	// Windows Vista and above: alert Windows that PPSSPP is DPI aware,
-	// so that we don't flicker in fullscreen on some PCs.
-	MakePPSSPPDPIAware();
+#ifdef _DEBUG
+	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF|_CRTDBG_LEAK_CHECK_DF);
+#endif
+
+	PROFILE_INIT();
 
 	// FMA3 support in the 2013 CRT is broken on Vista and Windows 7 RTM (fixed in SP1). Just disable it.
 #ifdef _M_X64
@@ -613,11 +604,15 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLin
 	}
 
 	g_Config.Save();
+	g_gameInfoCache.Clear();
+	g_gameInfoCache.Shutdown();
 	LogManager::Shutdown();
 
 	if (g_Config.bRestartRequired) {
 		W32Util::ExitAndRestart();
 	}
+
 	CoUninitialize();
+
 	return 0;
 }

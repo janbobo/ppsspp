@@ -17,7 +17,7 @@
 
 #include "Common/ChunkFile.h"
 #include "Core/CoreTiming.h"
-#include "Core/MemMap.h"
+#include "Core/MemMapHelpers.h"
 #include "Core/Reporting.h"
 #include "Core/HLE/HLE.h"
 #include "Core/HLE/sceDmac.h"
@@ -44,11 +44,6 @@ void __DmacDoState(PointerWrap &p) {
 }
 
 static int __DmacMemcpy(u32 dst, u32 src, u32 size) {
-#ifndef MOBILE_DEVICE
-	CBreakPoints::ExecMemCheck(src, false, size, currentMIPS->pc);
-	CBreakPoints::ExecMemCheck(dst, true, size, currentMIPS->pc);
-#endif
-
 	bool skip = false;
 	if (Memory::IsVRAMAddress(src) || Memory::IsVRAMAddress(dst)) {
 		skip = gpu->PerformMemoryCopy(dst, src, size);
@@ -118,8 +113,8 @@ static u32 sceDmacTryMemcpy(u32 dst, u32 src, u32 size) {
 }
 
 const HLEFunction sceDmac[] = {
-	{0x617f3fe6, &WrapU_UUU<sceDmacMemcpy>, "sceDmacMemcpy"},
-	{0xd97f94d8, &WrapU_UUU<sceDmacTryMemcpy>, "sceDmacTryMemcpy"},
+	{0X617F3FE6, &WrapU_UUU<sceDmacMemcpy>,          "sceDmacMemcpy",    'x', "xxx"},
+	{0XD97F94D8, &WrapU_UUU<sceDmacTryMemcpy>,       "sceDmacTryMemcpy", 'x', "xxx"},
 };
 
 void Register_sceDmac() {

@@ -579,7 +579,7 @@ bool SavedataParam::Load(SceUtilitySavedataParam *param, const std::string &save
 	return true;
 }
 
-bool SavedataParam::LoadSaveData(SceUtilitySavedataParam *param, const std::string &saveDirName, const std::string dirPath, bool secureMode) {
+bool SavedataParam::LoadSaveData(SceUtilitySavedataParam *param, const std::string &saveDirName, const std::string& dirPath, bool secureMode) {
 	u8 *data_ = param->dataBuf;
 	std::string filePath = dirPath+"/"+GetFileName(param);
 	s64 readSize;
@@ -641,9 +641,9 @@ void SavedataParam::LoadCryptedSave(SceUtilitySavedataParam *param, u8 *data, u8
 
 			// Don't notify the user if we're not going to upgrade the save.
 			if (!g_Config.bEncryptSave) {
-				I18NCategory *d = GetI18NCategory("Dialog");
-				osm.Show(d->T("When you save, it will load on a PSP, but not an older PPSSPP"), 6.0f);
-				osm.Show(d->T("Old savedata detected"), 6.0f);
+				I18NCategory *di = GetI18NCategory("Dialog");
+				osm.Show(di->T("When you save, it will load on a PSP, but not an older PPSSPP"), 6.0f);
+				osm.Show(di->T("Old savedata detected"), 6.0f);
 			}
 		} else {
 			if (decryptMode == 5 && prevCryptMode == 3) {
@@ -668,7 +668,7 @@ void SavedataParam::LoadNotCryptedSave(SceUtilitySavedataParam *param, u8 *data,
 		memcpy(data, saveData, std::min((u32)saveSize, (u32)param->dataBufSize));
 }
 
-void SavedataParam::LoadSFO(SceUtilitySavedataParam *param, const std::string dirPath) {
+void SavedataParam::LoadSFO(SceUtilitySavedataParam *param, const std::string& dirPath) {
 	ParamSFOData sfoFile;
 	std::string sfopath = dirPath+"/" + SFO_FILENAME;
 	PSPFileInfo sfoInfo = pspFileSystem.GetFileInfo(sfopath);
@@ -720,7 +720,7 @@ std::set<std::string> SavedataParam::getSecureFileNames(std::string dirPath) {
 	return secureFileNames;
 }
 
-void SavedataParam::LoadFile(const std::string dirPath, const std::string filename, PspUtilitySavedataFileData *fileData) {
+void SavedataParam::LoadFile(const std::string& dirPath, const std::string& filename, PspUtilitySavedataFileData *fileData) {
 	std::string filePath = dirPath + "/" + filename;
 	s64 readSize = -1;
 	if(!fileData->buf.IsValid())

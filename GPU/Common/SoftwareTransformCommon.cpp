@@ -58,18 +58,26 @@ static void SwapUVs(TransformedVertex &a, TransformedVertex &b) {
 //        to           to            or
 // 1   0       0   1        1   2          3   0
 
+// Note: 0 is BR and 2 is TL.
 
-// See comment below where this was called before.
-/*
-static void RotateUV(TransformedVertex v[4]) {
-	float x1 = v[2].x;
-	float x2 = v[0].x;
-	float y1 = v[2].y;
-	float y2 = v[0].y;
+static void RotateUV(TransformedVertex v[4], float flippedMatrix[16], float ySign) {
+	// Transform these two coordinates to figure out whether they're flipped or not.
+	Vec4f tl;
+	Vec3ByMatrix44(tl.AsArray(), v[2].pos, flippedMatrix);
+
+	Vec4f br;
+	Vec3ByMatrix44(br.AsArray(), v[0].pos, flippedMatrix);
+
+	const float invtlw = 1.0f / tl.w;
+	const float invbrw = 1.0f / br.w;
+	const float x1 = tl.x * invtlw;
+	const float x2 = br.x * invbrw;
+	const float y1 = tl.y * invtlw * ySign;
+	const float y2 = br.y * invbrw * ySign;
 
 	if ((x1 < x2 && y1 < y2) || (x1 > x2 && y1 > y2))
 		SwapUVs(v[1], v[3]);
-}*/
+}
 
 static void RotateUVThrough(TransformedVertex v[4]) {
 	float x1 = v[2].x;
@@ -122,7 +130,7 @@ static bool IsReallyAClear(const TransformedVertex *transformed, int numVerts) {
 
 void SoftwareTransform(
 	int prim, u8 *decoded, int vertexCount, u32 vertType, u16 *&inds, int indexType,
-	const DecVtxFormat &decVtxFormat, int &maxIndex, FramebufferManagerCommon *fbman, TextureCacheCommon *texCache, TransformedVertex *transformed, TransformedVertex *transformedExpanded, TransformedVertex *&drawBuffer, int &numTrans, bool &drawIndexed, SoftwareTransformResult *result) {
+	const DecVtxFormat &decVtxFormat, int &maxIndex, FramebufferManagerCommon *fbman, TextureCacheCommon *texCache, TransformedVertex *transformed, TransformedVertex *transformedExpanded, TransformedVertex *&drawBuffer, int &numTrans, bool &drawIndexed, SoftwareTransformResult *result, float ySign) {
 	bool throughmode = (vertType & GE_VTYPE_THROUGH_MASK) != 0;
 	bool lmode = gstate.isUsingSecondaryColor() && gstate.isLightingEnabled();
 
@@ -158,7 +166,7 @@ void SoftwareTransform(
 		// not really sure what a sensible value might be.
 		fog_slope = fog_slope < 0.0f ? -10000.0f : 10000.0f;
 	}
-	if (my_isnan(fog_slope))	{
+	if (my_isnan(fog_slope)) {
 		// Workaround for https://github.com/hrydgard/ppsspp/issues/5384#issuecomment-38365988
 		// Just put the fog far away at a large finite distance.
 		// Infinities and NaNs are rather unpredictable in shaders on many GPUs
@@ -170,34 +178,49 @@ void SoftwareTransform(
 	VertexReader reader(decoded, decVtxFormat, vertType);
 	// We flip in the fragment shader for GE_TEXMAP_TEXTURE_MATRIX.
 	const bool flipV = gstate_c.flipTexture && gstate.getUVGenMode() != GE_TEXMAP_TEXTURE_MATRIX;
-	for (int index = 0; index < maxIndex; index++) {
-		reader.Goto(index);
-
-		float v[3] = {0, 0, 0};
-		Vec4f c0 = Vec4f(1, 1, 1, 1);
-		Vec4f c1 = Vec4f(0, 0, 0, 0);
-		float uv[3] = {0, 0, 1};
-		float fogCoef = 1.0f;
-
-		if (throughmode) {
+	if (throughmode) {
+		for (int index = 0; index < maxIndex; index++) {
 			// Do not touch the coordinates or the colors. No lighting.
-			reader.ReadPos(v);
+			reader.Goto(index);
+			// TODO: Write to a flexible buffer, we don't always need all four components.
+			TransformedVertex &vert = transformed[index];
+			reader.ReadPos(vert.pos);
+
 			if (reader.hasColor0()) {
-				reader.ReadColor0(&c0.x);
-				// c1 is already 0.
+				reader.ReadColor0_8888(vert.color0);
 			} else {
-				c0 = Vec4f::FromRGBA(gstate.getMaterialAmbientRGBA());
+				vert.color0_32 = gstate.getMaterialAmbientRGBA();
 			}
 
 			if (reader.hasUV()) {
-				reader.ReadUV(uv);
+				reader.ReadUV(vert.uv);
 
-				uv[0] *= uscale;
-				uv[1] *= vscale;
+				vert.u *= uscale;
+				vert.v *= vscale;
+			} else {
+				vert.u = 0.0f;
+				vert.v = 0.0f;
 			}
-			fogCoef = 1.0f;
 			// Scale UV?
-		} else {
+
+			if (flipV) {
+				vert.v = 1.0f - vert.v;
+			}
+
+			// Ignore color1 and fog, never used in throughmode anyway.
+			// The w of uv is also never used (hardcoded to 1.0.)
+		}
+	} else {
+		// Okay, need to actually perform the full transform.
+		for (int index = 0; index < maxIndex; index++) {
+			reader.Goto(index);
+
+			float v[3] = {0, 0, 0};
+			Vec4f c0 = Vec4f(1, 1, 1, 1);
+			Vec4f c1 = Vec4f(0, 0, 0, 0);
+			float uv[3] = {0, 0, 1};
+			float fogCoef = 1.0f;
+
 			// We do software T&L for now
 			float out[3];
 			float pos[3];
@@ -369,17 +392,20 @@ void SoftwareTransform(
 			// Transform the coord by the view matrix.
 			Vec3ByMatrix43(v, out, gstate.viewMatrix);
 			fogCoef = (v[2] + fog_end) * fog_slope;
-		}
 
-		// TODO: Write to a flexible buffer, we don't always need all four components.
-		memcpy(&transformed[index].x, v, 3 * sizeof(float));
-		transformed[index].fog = fogCoef;
-		memcpy(&transformed[index].u, uv, 3 * sizeof(float));
-		if (flipV) {
-			transformed[index].v = 1.0f - transformed[index].v;
+			// TODO: Write to a flexible buffer, we don't always need all four components.
+			memcpy(&transformed[index].x, v, 3 * sizeof(float));
+			transformed[index].fog = fogCoef;
+			memcpy(&transformed[index].u, uv, 3 * sizeof(float));
+			if (flipV) {
+				transformed[index].v = 1.0f - transformed[index].v;
+			}
+			transformed[index].color0_32 = c0.ToRGBA();
+			transformed[index].color1_32 = c1.ToRGBA();
+
+			// The multiplication by the projection matrix is still performed in the vertex shader.
+			// So is vertex depth rounding, to simulate the 16-bit depth buffer.
 		}
-		transformed[index].color0_32 = c0.ToRGBA();
-		transformed[index].color1_32 = c1.ToRGBA();
 	}
 
 	// Here's the best opportunity to try to detect rectangles used to clear the screen, and
@@ -424,8 +450,8 @@ void SoftwareTransform(
 			// Okay, so we're texturing from outside the framebuffer, but inside the texture height.
 			// Breath of Fire 3 does this to access a render surface at an offset.
 			const u32 bpp = fbman->GetTargetFormat() == GE_FORMAT_8888 ? 4 : 2;
-			const u32 fb_size = bpp * fbman->GetTargetStride() * gstate_c.curTextureHeight;
-			const u32 prevH = gstate_c.curTextureHeight;
+			const u32 prevH = texCache->AttachedDrawingHeight();
+			const u32 fb_size = bpp * fbman->GetTargetStride() * prevH;
 			const u32 prevYOffset = gstate_c.curTextureYOffset;
 			if (texCache->SetOffsetTexture(fb_size)) {
 				const float oldWidthFactor = widthFactor;
@@ -460,6 +486,22 @@ void SoftwareTransform(
 		numTrans = vertexCount;
 		drawIndexed = true;
 	} else {
+		float flippedMatrix[16];
+		if (!throughmode) {
+			memcpy(&flippedMatrix, gstate.projMatrix, 16 * sizeof(float));
+
+			const bool invertedY = gstate_c.vpHeight < 0;
+			if (invertedY) {
+				flippedMatrix[5] = -flippedMatrix[5];
+				flippedMatrix[13] = -flippedMatrix[13];
+			}
+			const bool invertedX = gstate_c.vpWidth < 0;
+			if (invertedX) {
+				flippedMatrix[0] = -flippedMatrix[0];
+				flippedMatrix[12] = -flippedMatrix[12];
+			}
+		}
+
 		//rectangles always need 2 vertices, disregard the last one if there's an odd number
 		vertexCount = vertexCount & ~1;
 		numTrans = 0;
@@ -499,13 +541,8 @@ void SoftwareTransform(
 			// That's the four corners. Now process UV rotation.
 			if (throughmode)
 				RotateUVThrough(trans);
-
-			// Apparently, non-through RotateUV just breaks things.
-			// If we find a game where it helps, we'll just have to figure out how they differ.
-			// Possibly, it has something to do with flipped viewport Y axis, which a few games use.
-			// One game might be one of the Metal Gear ones, can't find the issue right now though.
-			// else
-			//	RotateUV(trans);
+			else
+				RotateUV(trans, flippedMatrix, ySign);
 
 			// Triangle: BR-TR-TL
 			indsOut[0] = i * 2 + 0;

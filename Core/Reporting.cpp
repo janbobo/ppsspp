@@ -189,8 +189,6 @@ namespace Reporting
 		return "Mac";
 #elif defined(__SYMBIAN32__)
 		return "Symbian";
-#elif defined(__FreeBSD__)
-		return "BSD";
 #elif defined(BLACKBERRY)
 		return "Blackberry";
 #elif defined(LOONGSON)
@@ -199,6 +197,16 @@ namespace Reporting
 		return "Nokia Maemo";
 #elif defined(__linux__)
 		return "Linux";
+#elif defined(__Bitrig__)
+		return "Bitrig";
+#elif defined(__DragonFly__)
+		return "DragonFly";
+#elif defined(__FreeBSD__)
+		return "FreeBSD";
+#elif defined(__NetBSD__)
+		return "NetBSD";
+#elif defined(__OpenBSD__)
+		return "OpenBSD";
 #else
 		return "Unknown";
 #endif
@@ -339,6 +347,9 @@ namespace Reporting
 		// Not sure if we should support locked cpu at all, but definitely not far out values.
 		if (g_Config.iLockedCPUSpeed != 0 && (g_Config.iLockedCPUSpeed < 111 || g_Config.iLockedCPUSpeed > 333))
 			return false;
+		// Don't allow builds without version info from git.  They're useless for reporting.
+		if (strcmp(PPSSPP_GIT_VERSION, "unknown") == 0)
+			return false;
 
 		// Some users run the exe from a zip or something, and don't have fonts.
 		// This breaks things, but let's not report it since it's confusing.
@@ -398,6 +409,21 @@ namespace Reporting
 		payload.type = MESSAGE;
 		payload.string1 = message;
 		payload.string2 = temp;
+
+		std::thread th(Process, pos);
+		th.detach();
+	}
+
+	void ReportMessageFormatted(const char *message, const char *formatted)
+	{
+		if (!IsEnabled() || CheckSpamLimited())
+			return;
+
+		int pos = payloadBufferPos++ % PAYLOAD_BUFFER_SIZE;
+		Payload &payload = payloadBuffer[pos];
+		payload.type = MESSAGE;
+		payload.string1 = message;
+		payload.string2 = formatted;
 
 		std::thread th(Process, pos);
 		th.detach();

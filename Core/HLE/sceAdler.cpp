@@ -15,7 +15,11 @@
 // Official git repository and contact information can be found at
 // https://github.com/hrydgard/ppsspp and http://www.ppsspp.org/.
 
+#ifdef SHARED_ZLIB
+#include <zlib.h>
+#else
 #include "../ext/zlib/zlib.h"
+#endif
 
 #include "sceAdler.h"
 #include "Common/Log.h"
@@ -37,7 +41,7 @@ static u32 sceAdler32(u32 adler, u32 data, u32 datalen) {
 
 const HLEFunction sceAdler[] =
 {
-	{ 0x9702EF11, WrapU_UUU<sceAdler32>, "sceAdler32" },
+	{0X9702EF11, &WrapU_UUU<sceAdler32>,             "sceAdler32", 'x', "xxx"},
 };
 
 void Register_sceAdler()

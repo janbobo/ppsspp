@@ -131,7 +131,8 @@ void CWCheatEngine::Exit() {
 	exit2 = true;
 }
 
-static inline std::vector<std::string> makeCodeParts(const std::vector<std::string> CodesList) { //Takes a single code line and creates a two-part vector for each code. Feeds to CreateCodeList
+// Takes a single code line and creates a two-part vector for each code. Feeds to CreateCodeList
+static inline std::vector<std::string> makeCodeParts(const std::vector<std::string>& CodesList) {
 	std::string currentcode;
 	std::vector<std::string> finalList;
 	char split_char = '\n';
@@ -283,9 +284,7 @@ std::vector<std::string> CWCheatEngine::GetCodesList() { //Reads the entire chea
 }
 
 void CWCheatEngine::InvalidateICache(u32 addr, int size) {
-	if (MIPSComp::jit) {
-		MIPSComp::jit->GetBlockCache()->InvalidateICache(addr & ~3, size);
-	}
+	currentMIPS->InvalidateICache(addr & ~3, size);
 }
 
 void CWCheatEngine::Run() {
@@ -412,7 +411,7 @@ void CWCheatEngine::Run() {
 					int len = arg;
 					InvalidateICache(destAddr, len);
 					if (Memory::IsValidAddress(addr) && Memory::IsValidAddress(destAddr)) {
-						Memory::Memcpy(destAddr, Memory::GetPointer(addr), len);
+						Memory::MemcpyUnchecked(destAddr, addr, len);
 					}
 				}
 				break;
@@ -441,7 +440,9 @@ void CWCheatEngine::Run() {
 								{
 									int srcAddr = Memory::Read_U32(addr) + offset;
 									int dstAddr = Memory::Read_U16(addr + baseOffset) + (arg3 & 0x0FFFFFFF);
-									Memory::Memcpy(dstAddr, Memory::GetPointer(srcAddr), arg);
+									if (Memory::IsValidAddress(dstAddr) && Memory::IsValidAddress(srcAddr)) {
+										Memory::MemcpyUnchecked(dstAddr, srcAddr, arg);
+									}
 									type = -1; //Done
 									break; }
 							case 0x2:

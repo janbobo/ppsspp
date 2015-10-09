@@ -15,8 +15,7 @@
 // Official SVN repository and contact information can be found at
 // http://code.google.com/p/dolphin-emu/
 
-#ifndef _JIT64ASM_H
-#define _JIT64ASM_H
+#pragma once
 
 #include "Common/x64Emitter.h"
 #include "Core/MIPS/MIPS.h"
@@ -31,15 +30,8 @@ namespace MIPSComp {
 class AsmRoutineManager : public Gen::XCodeBlock {
 private:
 	void Generate(MIPSState *mips, MIPSComp::Jit *jit, MIPSComp::JitOptions *jo);
-	void GenerateCommon();
 
 public:
-	AsmRoutineManager() {
-	}
-	~AsmRoutineManager() {
-		FreeCodeSpace();
-	}
-
 	void Init(MIPSState *mips, MIPSComp::Jit *jit, MIPSComp::JitOptions *jo) {
 		AllocCodeSpace(8192);
 		Generate(mips, jit, jo);
@@ -56,5 +48,3 @@ public:
 
 	const u8 *breakpointBailout;
 };
-
-#endif	// _JIT64ASM_H
